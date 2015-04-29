@@ -1,6 +1,14 @@
 (ns shrubbery.core
   (require [clojure.repl :refer [pst]]))
 
+
+
+
+
+
+
+
+
 (defprotocol Spy
   "A protocol for objects that expose call counts. `calls` should return a map of function names to lists of received
   args, one for each time the function is called."
@@ -80,6 +88,34 @@
        (~f ~@args))               ;   ((fn [method this a b] ...) :foo this a b)
     ))
 
+(defn proto-fn-with-impl2 [impls [m sig]]
+  (let [f (impls m)
+        f-sym (-> m name symbol)
+        args (-> sig :arglists first)]
+    (when (nil? f) (throw (RuntimeException. (str "No implementation provided for functon " m))))
+    `(~f-sym ~args (apply ~f ~args))))
+
+(defn proto-impl [[proto impls]]
+  (let [fn-specs (map (partial proto-fn-with-impl2 impls) (:sigs proto))]
+    `(~(:on proto) ~@fn-specs)))
+
+(defn reify-programmatically [protos-and-specs]
+  (let [impls (map proto-impl protos-and-specs)
+        reify-form (reduce concat (cons (list 'reify) impls))]
+    (println reify-form)
+    (eval reify-form)
+      ))
+
+;(reify
+;  shrubbery.core.Spy
+;  (proxied [t]
+;    (clojure.core/apply #<core$eval6473$fn__6476 shrubbery.core$eval6473$fn__6476@3b0a505e> [t]))
+;  (calls [t]
+;    (clojure.core/apply #<core$eval6473$fn__6474 shrubbery.core$eval6473$fn__6474@2db3d999> [t]))
+;  shrubbery.core.Stub
+;  (protocol [t]
+;    (clojure.core/apply #<core$stub$proto_fn__6413 shrubbery.core$stub$proto_fn__6413@3c3996d0> [t])))
+
 (defmacro spy
   "Given a protocol and an implementation of that protocol, returns a new implementation of that protocol that counts
   the number of times each method was received. The returned implementation also implements `Spy`, which exposes those
@@ -102,20 +138,37 @@
     `(fn [& args#] (if (fn? ~o) (apply ~o args#) ~o))
     `(fn [& args#] nil)))
 
-(defmacro stub
+;(defmacro stub
+;  "Given a protocol and a hashmap of function implementations, returns a new implementation of that protocol with those
+;  implementations. If no function implementation is given for a method, that method will return `nil` when called."
+;  ([proto]
+;  `(stub ~proto {}))
+;  ([proto impls]
+;   (let [sigs (fn-sigs proto)
+;         fns (map (fn [[m _]] (wrap-fn impls m)) sigs)
+;         mimpls (map proto-fn-with-impl fns sigs)]
+;     `(reify
+;        ~proto
+;        ~@mimpls
+;        Stub
+;        (protocol [t#] ~proto))
+;     )))
+
+(defn stub
   "Given a protocol and a hashmap of function implementations, returns a new implementation of that protocol with those
   implementations. If no function implementation is given for a method, that method will return `nil` when called."
   ([proto]
-  `(stub ~proto {}))
+   (stub proto {}))
   ([proto impls]
-   (let [sigs (fn-sigs proto)
-         fns (map (fn [[m _]] (wrap-fn impls m)) sigs)
-         mimpls (map proto-fn-with-impl fns sigs)]
-     `(reify
-        ~proto
-        ~@mimpls
-        Stub
-        (protocol [t#] ~proto))
+   (let [sigs (:sigs proto)
+         mimpls (reduce (fn [h [m _]]
+                          (let [maybe-fn (impls m)]
+                            (assoc h m (if (fn? maybe-fn) maybe-fn (fn [& args] maybe-fn)))))
+                        {} sigs)
+         proto-fn (fn [t] proto)]
+     (reify-programmatically
+       {proto mimpls
+        Stub {:protocol proto-fn}})
      )))
 
 (defmacro mock
