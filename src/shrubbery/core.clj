@@ -25,9 +25,9 @@
         (re-seq value)
         (first)
         (boolean)))
-  clojure.lang.ArraySeq
+  clojure.lang.IPersistentVector
   (matches? [matcher value]
-    (->> (map matches? value matcher)
+    (->> (map matches? matcher value)
          (every? identity)))
   java.lang.Object
   (matches? [matcher value]
@@ -46,10 +46,9 @@
   ([spy var]
    (-> (calls spy) (get var) (count)))
   ([spy var args]
-   (->>
-     (get (calls spy) var)
-     (filter #(matches? % args))
-     (count))))
+   (->> (get (calls spy) var)
+        (filter #(matches? args %))
+        (count))))
 
 (defmacro received?
   ([spy method]
