@@ -43,22 +43,22 @@
   (symbol (namespace k) (name k)))
 
 (defn call-count
-  "Given a spy, a keyword method name, and an optional vector of args, return the number of times the spy received
+  "Given a spy, a var, and an optional vector of args, return the number of times the spy received
   the method. If given args, filters the list of calls by matching the given args. Matched args may implement the `Matcher`
   protocol; the default implementation for `Object` is `=`."
-  ([spy method]
-   (-> (calls spy) (get (resolve (keyword->symbol method))) (count)))
-  ([spy method args]
-  (->>
-     (get (calls spy) (resolve (keyword->symbol method)))
+  ([spy var]
+   (-> (calls spy) (get var) (count)))
+  ([spy var args]
+   (->>
+     (get (calls spy) var)
      (filter #(matches? % args))
      (count))))
 
 (defmacro received?
   ([spy method]
-   `(>= (call-count ~spy ~(-> method str keyword)) 1))
+   `(>= (call-count ~spy ~(->> method resolve)) 1))
   ([spy method args]
-   `(>= (call-count ~spy ~(-> method str keyword) ~args) 1)))
+   `(>= (call-count ~spy ~(->> method resolve) ~args) 1)))
 
 (defn- fn-sigs [proto]
   (-> proto resolve var-get :sigs))
@@ -70,9 +70,9 @@
   (let [f-sym (-> m name symbol)
         var (-> m name (->> (symbol ns)) resolve)
         args (-> sig :arglists first)]
-    `(~f-sym ~args                   ; (foo [this a b]
-       (~f ~var ~@args)                ;   ((fn [method this a b] ...) :foo this a b)
-       (~(symbol ns (name f-sym)) ~impl ~@(rest args))) ;   (foo proto-impl a b))
+    `(~f-sym ~args                                          ; (foo [this a b]
+       (~f (resolve (symbol ~ns (name ~m))) ~@args)         ;   ((fn [method this a b] ...) :foo this a b)
+       (~(symbol ns (name f-sym)) ~impl ~@(rest args)))                        ;   (foo proto-impl a b))
     ))
 
 (defn proto-fn-with-impl
@@ -81,8 +81,8 @@
   [f [m sig]]
   (let [f-sym (-> m name symbol)
         args (-> sig :arglists first)]
-    `(~f-sym ~args                   ; (foo [this a b]
-       (~f ~@args))               ;   ((fn [method this a b] ...) :foo this a b)
+    `(~f-sym ~args                                          ; (foo [this a b]
+       (~f ~@args))                                         ;   ((fn [method this a b] ...) :foo this a b)
     ))
 
 (defn namespace-str [proto]
@@ -114,9 +114,10 @@
   "Given a protocol and a hashmap of function implementations, returns a new implementation of that protocol with those
   implementations. If no function implementation is given for a method, that method will return `nil` when called."
   ([proto]
-  `(stub ~proto {}))
+   `(stub ~proto {}))
   ([proto impls]
-   (let [impls (into {} (for [[k v] impls] [(resolve (keyword->symbol k)) v]))
+   (let [impls (into {} (for [[k v] impls] [(resolve (symbol (namespace k)
+                                                             (name k))) v]))
          sigs (fn-sigs proto)
          fns (map (fn [[m _]] (wrap-fn impls (resolve (symbol (namespace-str proto)
                                                               (name m))))) sigs)
