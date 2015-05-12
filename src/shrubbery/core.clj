@@ -39,9 +39,6 @@
   (reify Matcher
     (matches? [_ _] true)))
 
-(defn keyword->symbol [k]
-  (symbol (namespace k) (name k)))
-
 (defn call-count
   "Given a spy, a var, and an optional vector of args, return the number of times the spy received
   the method. If given args, filters the list of calls by matching the given args. Matched args may implement the `Matcher`
